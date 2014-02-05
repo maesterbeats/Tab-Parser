@@ -23,7 +23,7 @@ _ = require '/usr/local/lib/node_modules/underscore'
 #---------------------------------------------------------------------
 # TODO: 
 #	
-#	- Handle Bar Lines, Repeat Symbols, and String Names
+#	- Handle String Names
 #
 #	- Handle Lines with tab intersperced with other content...
 #
@@ -158,8 +158,6 @@ flattenLines = (lines)->
 
 
 
-
-
 #------------------------------------------------------------------------ 
 #						PROCESS LINE
 #------------------------------------------------------------------------
@@ -176,10 +174,36 @@ flattenLines = (lines)->
 #									the next note
 #-----------------------------------------------------------------------
 
+
+
+class barStartError extends Error
+	constructor: (message)->
+		@name = "barStartError"
+		@message = message or "Default Message"
+
+class barEndError extends Error
+	constructor: (message)->
+		@name = "barEndError"
+		@message = message or "Default Message"
+
+
 processLine = (tab)->
 	
 	Results = []
 	
+	try
+		if tab[0] isnt "|"
+			throw new barStartError("this line doesnt start with a barline...")
+	catch error
+		console.log error
+		tab = "|" + tab
+			
+	try
+		if tab[tab.length - 1] isnt "|"
+			throw new barEndError("this line doesnt end with a barline")
+	catch error
+		console.log error
+		tab += "|"
 	
 	_preFixes = [
 		"h"
@@ -189,92 +213,86 @@ processLine = (tab)->
 		"("
 		"b"
 	]
-
-	#------------------------------------------------------------------------
-	# Im aware that defining these helper functions here is inefficient
-	# because theyll get redefined on each iteration... But its only 6
-	# calls and I dont have enough confidence with javascript yet to
-	# get fancy with scope
-	#------------------------------------------------------------------------
+	
 
 	sortPre_vs_Post = (rest)->
 		[prefix, postfix] = [[],[]]
 		for c in rest
-			if c in _preFixes then prefix.push c else postfix.push c
+			if c in _preFixes
+				prefix.push c 
+			else
+				postfix.push c
 		[prefix, postfix]
 
 
 	processPost =(l)->
-		[post, dash] = [[],0]
+		post = []
+		dash = 0
+		bar = ""
 		for v in l
-			if v is "-" then dash++ else post.push v
-		[post,dash]
+			if v is "-"
+				dash++ 
+			#else if v in _barLines
+			#	bar += v
+			else
+				post.push v
+		[post, dash] #, bar]
 			
 			
 
-	updateResults = (pre, fret, post, blank, contex)->
-		contex.push {prefix: pre, fretNum: fret, postFix: post, dur: blank}
+	updateResults = (pre, val, kind, post, blank)->
+		Results.push
+			prefix: pre 
+			value: val
+			kind: kind
+			postFix: post
+			dur: blank
 			
 
 
-	split_tab_at_frets = (_tab)->
-		r = _tab.match /\d\d?\D*/g
+	split_tab_at_Symbols = (_tab)->
+		r = _tab.match /\d\d?[^|0-9]*|:?\|\|?:?[^|0-9]*/g
 		if r?
 			return r
 		else
 			return ""
 	
-
-	# prep tab string for processing by breaking it into
-	# sub-strings starting with frets.
-	
-	matches = split_tab_at_frets(tab)
 	
 
-
-	# Time to actualy process some tab. The general idea is this...
-	#
-	# FIRST split each match into two parts
-	# 	1) The Fret number: which should be the first 1-2 characters
-	#	in each match
-	#	2) Everything else untill the next fret:
-	#		NOTE:	some of this stuff will be post-articulations
-	#				for the current fret such as vibrato....
-	#				And some of it will be pre-articulations
-	#				for the upcoming fret
-	# 
-	# NEXT sort out the "everything else" part by...
-	#	1) splitting it off from the fret number
-	#	2) splitting it into an array
-	#	3) Taking that new array and feeding it to
-	# 		the sortPrePost fn which basicaly just
-	#		groups the symbols as either pre or post
-	# 		fix simbols based on a lookup.
-	#
-	# THEN processing the postfix results a bit
-	#	with processPost() since the postfix results
-	# 	could still contain not only valid post-fix
-	#	articulations but also blank spaces denoted as
-	#	dashes
-	#
-	# FINALY taking the freshly minted pre, fret, post,
-	#	and duration data for the current fret and
-	# 	adding it to the results
-
+	nameSymbol = (s)->
+		fret = s.match /\d\d?/g
+		barLine = s.match /:?\|\|?:?/g
+		if fret?
+			"fret"
+		else if barLine?
+			"barLine"
+		else
+			"unknown"
+	
+	
+	
+	matches = split_tab_at_Symbols(tab)
+	
 	for m in matches
 		
-		fret = m.match(/\d\d?/)[0]
-		rest = m.split(fret)[1].split ""
+		symbol = m.match(/\d\d?|:?\|\|?:?/g)[0]
+		
+		kind = nameSymbol(symbol)
+		
+		rest = m.split(symbol)[1].split ""
 		
 		pre = prefix
 		 
-		[prefix, postfix] = sortPre_vs_Post(rest)	
+		[prefix, postfix] = sortPre_vs_Post(rest)
 		[post, dur] = processPost(postfix)
 		
 		
-		updateResults(pre, fret, post, dur, Results)	
+		updateResults(pre, symbol, kind, post, dur)	
+			
 		
 	return Results
+	
+
 		
 		
 
